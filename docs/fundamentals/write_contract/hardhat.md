@@ -2,6 +2,12 @@
 
 This document explains how to start writing smart contract using [Zama Hardhat template](https://github.com/zama-ai/fhevm-hardhat-template).
 
+{% hint style="success" %}
+**Zama 5-Question Developer Survey**
+
+We want to hear from you! Take 1 minute to share your thoughts and helping us enhance our documentation and libraries. **👉** [**Click here**](https://zvajd6l0ngk.typeform.com/to/I7mXXanI) to participate.
+{% endhint %}
+
 The Hardhat template allows you to start a fhEVM docker image and run your smart contract on it. Refer to the [README](https://github.com/zama-ai/fhevm-hardhat-template/blob/main/README.md) for more information.
 
 ## Developing and testing
