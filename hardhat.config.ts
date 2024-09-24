@@ -12,7 +12,6 @@ import { resolve } from 'path';
 import * as path from 'path';
 
 import CustomProvider from './CustomProvider';
-// Adjust the import path as needed
 import './tasks/accounts';
 import './tasks/getEthereumAddress';
 import './tasks/mint';
@@ -42,39 +41,30 @@ function getAllSolidityFiles(dir: string, fileList: string[] = []): string[] {
 task('compile:specific', 'Compiles only the specified contract')
   .addParam('contract', "The contract's path")
   .setAction(async ({ contract }, hre) => {
-    // Adjust the configuration to include only the specified contract
     hre.config.paths.sources = contract;
-
     await hre.run('compile');
   });
 
 task('coverage-mock', 'Run coverage after running pre-process task').setAction(async function (args, env) {
-  // Get all .sol files in the examples/ folder
   const examplesPath = path.join(env.config.paths.root, 'examples/');
   const solidityFiles = getAllSolidityFiles(examplesPath);
-
-  // Backup original files
   const originalContents: Record<string, string> = {};
   solidityFiles.forEach((filePath) => {
     originalContents[filePath] = fs.readFileSync(filePath, { encoding: 'utf8' });
   });
 
   try {
-    // Run pre-process task
     await env.run(TASK_PREPROCESS);
-
-    // Run coverage task
     await env.run('coverage');
   } finally {
-    // Restore original files
     for (const filePath in originalContents) {
       fs.writeFileSync(filePath, originalContents[filePath], { encoding: 'utf8' });
     }
   }
 });
 
-const dotenvConfigPath: string = process.env.DOTENV_CONFIG_PATH || './.env';
-dotenv.config({ path: resolve(__dirname, dotenvConfigPath) });
+// Load environment variables
+dotenv.config({ path: resolve(__dirname, './.env') });
 
 // Ensure that we have all the environment variables we need.
 const mnemonic: string | undefined = process.env.MNEMONIC;
@@ -82,106 +72,21 @@ if (!mnemonic) {
   throw new Error('Please set your MNEMONIC in a .env file');
 }
 
-const network = process.env.HARDHAT_NETWORK;
+// Retrieve chain ID and RPC URL from the .env file
+const chainId = Number(process.env.CHAIN_ID);
+const rpcUrl = process.env.RPC_URL;
 
-function getRemappings() {
-  return fs
-    .readFileSync('remappings.txt', 'utf8')
-    .split('\n')
-    .filter(Boolean) // remove empty lines
-    .map((line: string) => line.trim().split('='));
+if (!chainId || !rpcUrl) {
+  throw new Error('Please set your CHAIN_ID and RPC_URL in a .env file');
 }
-
-const chainIds = {
-  zama: 8009,
-  local: 9000,
-  localNetwork1: 9000,
-  multipleValidatorTestnet: 8009,
-};
-
-function getChainConfig(chain: keyof typeof chainIds): NetworkUserConfig {
-  let jsonRpcUrl: string;
-  switch (chain) {
-    case 'local':
-      jsonRpcUrl = 'http://localhost:8545';
-      break;
-    case 'localNetwork1':
-      jsonRpcUrl = 'http://127.0.0.1:9650/ext/bc/fhevm/rpc';
-      break;
-    case 'multipleValidatorTestnet':
-      jsonRpcUrl = 'https://rpc.fhe-ethermint.zama.ai';
-      break;
-    case 'zama':
-      jsonRpcUrl = 'https://devnet.zama.ai';
-      break;
-  }
-  return {
-    accounts: {
-      count: 10,
-      mnemonic,
-      path: "m/44'/60'/0'/0",
-    },
-    chainId: chainIds[chain],
-    url: jsonRpcUrl,
-  };
-}
-
-task('test', async (taskArgs, hre, runSuper) => {
-  // Run modified test task
-
-  if (network === 'hardhat') {
-    // in fhevm mode all this block is done when launching the node via `pnmp fhevm:start`
-    const privKeyDeployer = process.env.PRIVATE_KEY_GATEWAY_DEPLOYER;
-    const privKeyOwner = process.env.PRIVATE_KEY_GATEWAY_OWNER;
-    const privKeyRelayer = process.env.PRIVATE_KEY_GATEWAY_RELAYER;
-    const deployerAddress = new hre.ethers.Wallet(privKeyDeployer!).address;
-    const ownerAddress = new hre.ethers.Wallet(privKeyOwner!).address;
-    const relayerAddress = new hre.ethers.Wallet(privKeyRelayer!).address;
-
-    await hre.run('task:computePredeployAddress', { privateKey: privKeyDeployer });
-
-    const bal = '0x1000000000000000000000000000000000000000';
-    const p1 = hre.network.provider.send('hardhat_setBalance', [deployerAddress, bal]);
-    const p2 = hre.network.provider.send('hardhat_setBalance', [ownerAddress, bal]);
-    const p3 = hre.network.provider.send('hardhat_setBalance', [relayerAddress, bal]);
-    await Promise.all([p1, p2, p3]);
-    await hre.run('compile');
-    await hre.run('task:deployGateway', { privateKey: privKeyDeployer, ownerAddress: ownerAddress });
-
-    const parsedEnv = dotenv.parse(fs.readFileSync('gateway/.env.gateway'));
-    const gatewayContractAddress = parsedEnv.GATEWAY_CONTRACT_PREDEPLOY_ADDRESS;
-
-    await hre.run('task:addRelayer', {
-      privateKey: privKeyOwner,
-      gatewayAddress: gatewayContractAddress,
-      relayerAddress: relayerAddress,
-    });
-  }
-
-  await runSuper();
-});
 
 const config: HardhatUserConfig = {
   preprocess: {
     eachLine: (hre) => ({
-      transform: (line: string) => {
-        if (network === 'hardhat') {
-          // checks if HARDHAT_NETWORK env variable is set to "hardhat" to use the remapping for the mocked version of TFHE.sol
-          if (line.match(/".*.sol";$/)) {
-            // match all lines with `"<any-import-path>.sol";`
-            for (const [from, to] of getRemappings()) {
-              if (line.includes(from)) {
-                line = line.replace(from, to);
-                break;
-              }
-            }
-          }
-        }
-        return line;
-      },
+      transform: (line: string) => line,
     }),
   },
-  defaultNetwork: 'local',
+  defaultNetwork: 'custom', // Change this to your desired default network name
   namedAccounts: {
     deployer: 0,
   },
@@ -195,18 +100,15 @@ const config: HardhatUserConfig = {
     src: './examples',
   },
   networks: {
-    hardhat: {
+    custom: {
+      url: rpcUrl,
+      chainId: chainId,
       accounts: {
         count: 10,
         mnemonic,
         path: "m/44'/60'/0'/0",
       },
     },
-    zama: getChainConfig('zama'),
-    localDev: getChainConfig('local'),
-    local: getChainConfig('local'),
-    localNetwork1: getChainConfig('localNetwork1'),
-    multipleValidatorTestnet: getChainConfig('multipleValidatorTestnet'),
   },
   paths: {
     artifacts: './artifacts',
@@ -218,12 +120,8 @@ const config: HardhatUserConfig = {
     version: '0.8.24',
     settings: {
       metadata: {
-        // Not including the metadata hash
-        // https://github.com/paulrberg/hardhat-template/issues/31
         bytecodeHash: 'none',
       },
-      // Disable the optimizer when debugging
-      // https://hardhat.org/hardhat-network/#solidity-optimizer-support
       optimizer: {
         enabled: true,
         runs: 800,
